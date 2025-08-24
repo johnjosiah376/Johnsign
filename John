@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EUR/USD Tracker</title>
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background: #f7f7f7;
+    }
+    .app {
+      max-width: 800px;
+      margin: auto;
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+    }
+    .chart {
+      margin-bottom: 20px;
+    }
+    .panel {
+      background: #eee;
+      padding: 10px;
+      margin-top: 10px;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <h1>EUR/USD Tracker</h1>
+    <div id="chart" class="chart" style="height:300px;"></div>
+
+    <div class="panel">
+      <h2>Signal</h2>
+      <p id="signal">Loading...</p>
+    </div>
+
+    <div class="panel">
+      <h2>Alerts</h2>
+      <ul id="alerts"></ul>
+    </div>
+
+    <div class="panel">
+      <h2>Trading Journal</h2>
+      <input type="text" id="journalInput" placeholder="Note" />
+      <ul id="journal"></ul>
+    </div>
+  </div>
+
+  <script>
+    const ALPHA_KEY = "R1HHJLPHWR4MA4LY"; // your API key
+    const SYMBOL_FROM = "EUR";
+    const SYMBOL_TO = "USD";
+
+    function fxIntradayUrl(interval = "5min") {
+      return `https://www.alphavantage.co/query?function=FX_INTRADAY&from_symbol=${SYMBOL_FROM}&to_symbol=${SYMBOL_TO}&interval=${interval}&outputsize=compact&apikey=${ALPHA_KEY}`;
+    }
+
+    function parseSeries(data, interval) {
+      const key = `Time Series FX (${interval})`;
+      const series = data[key];
+      if (!series) return [];
+      return Object.keys(series)
+        .map((t) => ({
+          time: Math.floor(new Date(t).getTime() / 1000),
+          value: parseFloat(series[t]["4. close"])
+        }))
+        .reverse();
+    }
+
+    function computeSMA(data, len) {
+      const out = [];
+      for (let i = 0; i < data.length; i++) {
+        if (i < len - 1) {
+          out.push({ time: data[i].time, value: null });
+        } else {
+          let sum = 0;
+          for (let j = 0; j < len; j++) sum += data[i - j].value;
+          out.push({ time: data[i].time, value: sum / len });
+        }
+      }
+      return out;
+    }
+
+    function computeSignal(data) {
+      if (data.length < 50) return null;
+      const latest = data[data.length - 1].value;
+      const prev = data[data.length - 2].value;
+
+      const sma10 = computeSMA(data, 10);
+      const sma20 = computeSMA(data, 20);
+      const sma50 = computeSMA(data, 50);
+
+      const s10 = sma10[sma10.length - 1].value;
+      const s20 = sma20[sma20.length - 1].value;
+      const s50 = sma50[sma50.length - 1].value;
+
+      let sig = "Neutral";
+      if (s10 > s20 && s20 > s50 && latest > prev) sig = "Buy";
+      else if (s10 < s20 && s20 < s50 && latest < prev) sig = "Sell";
+
+      let dist = Math.abs(latest - s50) / s50;
+      const conf = Math.min(1, 0.7 * (sig !== "Neutral" ? 1 : 0) + 0.3 * Math.min(1, dist * 50));
+
+      return { signal: sig, confidence: conf };
+    }
+
+    // Setup chart
+    const chart = LightweightCharts.createChart(document.getElementById("chart"), { width: 600, height: 300 });
+    const priceLine = chart.addLineSeries({ color: "blue" });
+
+    async function load() {
+      try {
+        const resp = await axios.get(fxIntradayUrl("5min"));
+        const series = parseSeries(resp.data, "5min");
+        if (!series.length) return;
+
+        priceLine.setData(series);
+
+        const sig = computeSignal(series);
+        if (sig) {
+          document.getElementById("signal").textContent =
+            sig.signal + " (confidence: " + (sig.confidence * 100).toFixed(1) + "%)";
+          if (sig.signal !== "Neutral") {
+            const li = document.createElement("li");
+            li.textContent = `${sig.signal} Signal @ ${new Date().toLocaleTimeString()}`;
+            document.getElementById("alerts").appendChild(li);
+          }
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    load();
+    setInterval(load, 60000);
+
+    // Journal
+    document.getElementById("journalInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && e.target.value.trim()) {
+        const li = document.createElement("li");
+        li.textContent = new Date().toLocaleString() + ": " + e.target.value;
+        document.getElementById("journal").appendChild(li);
+        e.target.value = "";
+      }
+    });
+  </script>
+</body>
+</html>git remote add origin https://github.com/johnjosiah376/Johnsign.git
+git branch -M main
+git push -u origin main
